@@ -1,6 +1,8 @@
 import yfinance as yf
 import pandas as pd
 import os
+import requests
+from io import StringIO
 
 def download_sp500_data():
     output_dir = "data/raw"
@@ -10,9 +12,14 @@ def download_sp500_data():
     output_file = os.path.join(output_dir, "sp500_prices.csv")
     
     print("step 1/3: downloading data from Wikipedia...")
+    url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
     try:
-        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        payload = pd.read_html(url)
+        response = requests.get(url, headers=headers)
+        response.raise_for_status() # check request successful or not
+        payload = pd.read_html(StringIO(response.text))
         sp500_table = payload[0]
         tickers = sp500_table['Symbol'].tolist()
         
