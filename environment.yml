@@ -1,0 +1,39 @@
+name: quant_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # 1. Core Python & System
+  - python=3.10
+  - pip
+
+  # 2. Data Manipulation & Math (The "Engine")
+  - numpy>=1.24       # Fundamental math
+  - pandas>=2.0       # Dataframes (OHLCV data)
+  - scipy             # Scientific computing (optimization, interpolation)
+
+  # 3. Data Acquisition
+  - yfinance          # Yahoo Finance downloader
+  - lxml              # HTML parsing (needed for scraping Wikipedia S&P list)
+  - requests          # HTTP requests
+
+  # 4. Visualization (The "Front-end")
+  - matplotlib        # Basic plotting
+  - seaborn           # Statistical data visualization (great for heatmaps)
+
+  # 5. Statistics & Machine Learning (The "Brain")
+  - scikit-learn      # Machine Learning (Regressions, PCA, Clustering)
+  - statsmodels       # Econometrics (ADF tests, OLS details)
+
+  # 6. Development Tools
+  - jupyterlab        # Interactive coding environment
+  - ipykernel         # Kernel for Jupyter
+  - tqdm              # Progress bars (essential for long backtests)
+
+  # 7. Optional but Recommended for Quant
+  # - ta-lib          # Technical Analysis Library (RSI, MACD) - Uncomment if needed*
+  # - cvxpy           # Convex Optimization (Portfolio Optimization) - Uncomment if needed
+
+  # pip-only packages (if conda doesn't have them)
+  - pip:
+    - alpha-vantage   # Alternative data source (optional)
