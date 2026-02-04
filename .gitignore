@@ -1,4 +1,4 @@
 echo "data/" >> .gitignore
 echo ".DS_Store" >> .gitignore
 echo "__pycache__/" >> .gitignore
-echo ".ipynb_checkpoints/" >> .gitignore
+echo ".ipynb_checkpoints/" >> .gitignore.DS_Store
