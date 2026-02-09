@@ -4,7 +4,7 @@ channels:
   - defaults
 dependencies:
   # 1. Core Python & System
-  - python=3.10
+  - python=3.12
   - pip
 
   # 2. Data Manipulation & Math (The "Engine")
@@ -31,9 +31,27 @@ dependencies:
   - tqdm              # Progress bars (essential for long backtests)
 
   # 7. Optional but Recommended for Quant
-  # - ta-lib          # Technical Analysis Library (RSI, MACD) - Uncomment if needed*
-  # - cvxpy           # Convex Optimization (Portfolio Optimization) - Uncomment if needed
+  - ta-lib          # Technical Analysis Library (RSI, MACD) - Uncomment if needed*
+  - cvxpy           # Convex Optimization (Portfolio Optimization) - Uncomment if needed
+
+  # ======================
+  # Machine Learning
+  # ======================
+
+  - scikit-learn
+  - lightgbm
+  - xgboost
+
+  # ======================
+  # Deep Learning
+  # ======================
+  - pytorch
+  - torchvision
+  - torchaudio
 
   # pip-only packages (if conda doesn't have them)
   - pip:
     - alpha-vantage   # Alternative data source (optional)
+    - backtrader
+    - vectorbt
+    - wrds
