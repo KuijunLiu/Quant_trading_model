@@ -55,3 +55,4 @@ dependencies:
     - backtrader
     - vectorbt
     - wrds
+    - swig

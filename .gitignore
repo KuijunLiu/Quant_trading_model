@@ -2,3 +2,22 @@ echo "data/" >> .gitignore
 echo ".DS_Store" >> .gitignore
 echo "__pycache__/" >> .gitignore
 echo ".ipynb_checkpoints/" >> .gitignore.DS_Store
+
+# 忽略所有数据文件夹
+data/
+outputs/
+
+# 忽略所有常见的数据文件格式
+*.csv
+*.xlsx
+*.pkl
+*.parquet
+*.db
+*.sqlite
+
+# 忽略 Python 编译文件和环境
+__pycache__/
+*.pyc
+.env
+.pgpass
+.DS_Store
