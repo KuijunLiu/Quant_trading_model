@@ -4,9 +4,9 @@ A monthly stock-selection pipeline using CRSP data for feature engineering, mode
 ## Installation
 - Python = 3.12
   
-- bash
-- conda env create -f environment.yml
-- conda activate quant_env
+```bash
+-- conda env create -f environment.yml
+-- conda activate quant_env
 
 
 ----------------------------------
