@@ -8,9 +8,9 @@ A monthly stock-selection pipeline using CRSP data for feature engineering, mode
 -- conda env create -f environment.yml
 -- conda activate quant_env
 
-
----
+```
 ## Project Structure
+```
 .
 ├── data/                  # (optional) local raw/processed data (ignored by git)
 ├── notebooks/             # exploration / experiments
@@ -25,6 +25,7 @@ A monthly stock-selection pipeline using CRSP data for feature engineering, mode
 └── README.md
 
 ---
+```
 ## Data
 This project expects CRSP monthly stock file (MSF) exported from WRDS.
 
