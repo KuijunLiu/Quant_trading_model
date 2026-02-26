@@ -16,24 +16,23 @@ Date: 2026-02-05
 import wrds
 import pandas as pd
 import numpy as np
-import os  # <--- 别忘了导入 os，用来创建文件夹
+import os  # create folder if not exists
 
 def fetch_crsp_data():
-    # 1. 检查文件夹是否存在 (否则 to_csv 会报错)
+    # 1. check if data/raw folder exists, if not create it
     if not os.path.exists("data/raw"):
         os.makedirs("data/raw")
 
     print("📡 Connecting to WRDS...")
-    # 如果你之前运行过 create_pgpass_file()，这里甚至不需要填 username
-    # 如果没运行过，记得把 '你的用户名' 换成真实的 WRDS 账号
+    # if you have run this script before, WRDS will save your credentials and you won't need to input them again
+    # if not, it will prompt you to enter your WRDS username and password
     db = wrds.Connection() 
 
     print("🚀 Querying CRSP Monthly Data (Filtered for Common Stocks)...")
     
-    # --- 关键修改点 ---
-    # 我们增加了两个 list 来辅助过滤
-    # shrcd IN (10, 11): 代表 "Ordinary Common Shares" (普通股)，排除 ETF/REITs
-    # exchcd IN (1, 2, 3): 代表 NYSE, AMEX, NASDAQ (三大主板)，排除粉单市场
+    # we add a LEFT JOIN to get the company name, share code, and exchange code from the msenames table
+    # shrcd IN (10, 11): "Ordinary Common Shares"，exclude ETF/REITs
+    # exchcd IN (1, 2, 3): NYSE, AMEX, NASDAQ 
     
     sql_query = """
     SELECT 
@@ -63,24 +62,24 @@ def fetch_crsp_data():
     
     print(f"✅ Downloaded {len(df)} rows.")
     
-    # --- 数据清洗 ---
+    # --- data cleaning ---
     print("🧹 Cleaning data...")
     df['date'] = pd.to_datetime(df['date'])
-    df['prc'] = df['prc'].abs() # 处理 Bid/Ask 平均价的负号
+    df['prc'] = df['prc'].abs() # deal with negative prices (delisting returns are negative, but we want the absolute price for market cap calculation)
     df['mkt_cap'] = df['prc'] * df['shrout'] # 计算市值
-    df['ret'] = pd.to_numeric(df['ret'], errors='coerce') # 处理非数值回报
+    df['ret'] = pd.to_numeric(df['ret'], errors='coerce') # deal with non-numeric returns (e.g. delisting returns can be 'C' for "delisted with no price")
     
-    # 过滤微盘股 (Penny Stocks)
+    # filter Penny Stocks
     original_count = len(df)
     df = df[df['prc'] > 5]
     print(f"📉 Filtered Penny Stocks: {original_count} -> {len(df)} rows")
     
-    # 保存
+    # save data to CSV
     output_path = "data/raw/crsp_monthly.csv"
     df.to_csv(output_path, index=False)
     print(f"💾 Saved clean data to {output_path}")
 
-    # 关闭连接
+    # close WRDS connection
     db.close()
     
     return df
