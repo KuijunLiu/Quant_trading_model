@@ -7,6 +7,49 @@ import numpy as np
 import pandas as pd
 
 
+"""
+features_build.py
+=================
+Builds lagged price and return features from the processed CRSP monthly stock data.
+
+Input
+-----
+data/processed/crsp_monthly_processed.csv  (or .parquet)
+    Clean CRSP monthly panel with at minimum the columns:
+    date, permno, ret, prc, shrout.
+    Optional enriching columns: mkt_cap, cfacpr, vol, comnam.
+
+Output
+------
+data/processed/crsp_monthly_features.csv  (or .parquet)
+    Same panel with the following feature columns appended:
+
+    | Column             | Description                                              |
+    |--------------------|----------------------------------------------------------|
+    | adj_prc            | Split-adjusted closing price (prc / cfacpr)              |
+    | turnover           | Monthly share turnover (vol / shrout)                    |
+    | log_mkt_cap        | Natural log of market capitalisation                     |
+    | ret_lag_{1,2,3}    | Return lagged 1, 2, 3 months                             |
+    | mom_2_6            | Cumulative return over months t-6 to t-2 (skip-1 mom.)  |
+    | mom_2_12           | Cumulative return over months t-12 to t-2                |
+    | vol_{3,6,12}m      | Rolling return std-dev over 3, 6, 12 months              |
+    | price_ma_6_ratio   | Lagged price / 6-month MA − 1                            |
+    | price_ma_12_ratio  | Lagged price / 12-month MA − 1                           |
+    | turnover_{3,12}m   | Rolling mean turnover over 3, 12 months                  |
+    | ret_fwd_1m         | Forward 1-month return (prediction target / label)       |
+
+Design notes
+------------
+* All rolling and lag operations are computed **within each permno group** so
+  that month boundaries never cross between different stocks.
+* Every feature is shifted by at least 1 period relative to the current row to
+  prevent look-ahead bias (no future information leaks into the feature set).
+* The script can be run directly from the command line:
+      python -m src.features.features_build --input <path> --output <path>
+  or imported as a library via `build_features(df)`.
+"""
+
+
 # `Path(__file__)` 表示“当前这个 Python 文件的路径”。
 # `resolve()` 会把它变成绝对路径。
 # `parents[2]` 表示往上退两层目录：
@@ -113,15 +156,6 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # 复制一份，避免直接改到传进来的原始 DataFrame。
     features = df.copy()
 
-    # 先统一数据类型。CRSP 导出的 CSV 常见字符串、缺失值、异常值混在一起，
-    # 所以这里用 `errors="coerce"` 把无法解析的值转成 NaN，后面统一清洗。
-    features["date"] = pd.to_datetime(features["date"], errors="coerce")
-    features["permno"] = pd.to_numeric(features["permno"], errors="coerce")
-    features["ret"] = pd.to_numeric(features["ret"], errors="coerce")
-    # CRSP 的 `prc` 可能为负，负号通常只是报价约定，不代表真正的负价格。
-    features["prc"] = pd.to_numeric(features["prc"], errors="coerce").abs()
-    features["shrout"] = pd.to_numeric(features["shrout"], errors="coerce")
-
     if "mkt_cap" in features.columns:
         features["mkt_cap"] = pd.to_numeric(features["mkt_cap"], errors="coerce")
     else:
@@ -129,9 +163,6 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         features["mkt_cap"] = features["prc"] * features["shrout"]
 
     features = features.dropna(subset=["date", "permno", "prc", "shrout", "ret"])
-    features = features[(features["prc"] > 0) & (features["shrout"] > 0)]
-    # 时间序列特征必须先排序，否则 lag/rolling 会错位。
-    features = features.sort_values(["permno", "date"]).reset_index(drop=True)
 
     # 后面很多特征都要“按股票分组”计算，所以把分组键单独拿出来复用。
     groups = features["permno"]
