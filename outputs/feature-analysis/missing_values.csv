@@ -1,0 +1,16 @@
+,missing_count,missing_pct
+ret_fwd_1m,15639,1.15
+ret_lag_1_cs,0,0.0
+ret_lag_2_cs,0,0.0
+ret_lag_3_cs,0,0.0
+mom_2_6_cs,0,0.0
+mom_2_12_cs,0,0.0
+vol_3m_cs,0,0.0
+vol_6m_cs,0,0.0
+vol_12m_cs,0,0.0
+price_ma_6_ratio_cs,0,0.0
+price_ma_12_ratio_cs,0,0.0
+log_mkt_cap_cs,0,0.0
+turnover_cs,0,0.0
+turnover_3m_cs,0,0.0
+turnover_12m_cs,0,0.0
