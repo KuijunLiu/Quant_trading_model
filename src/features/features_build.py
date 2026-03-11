@@ -141,13 +141,13 @@ def _standardize_cross_section(
             continue
         mu = df.groupby("date")[col].transform("mean")
         sigma = df.groupby("date")[col].transform("std")
-        df[f"{col}_cs"] = ((df[col] - mu) / sigma).fillna(0.0)
+        df[f"{col}_cs"] = np.where(sigma > 0, (df[col] - mu) / sigma, 0.0)
     return df
 
 
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     missing_columns = REQUIRED_COLUMNS.difference(df.columns)
-    if missing_columns:
+    if (missing_columns):
         missing = ", ".join(sorted(missing_columns))
         raise ValueError(f"Missing required columns: {missing}")
 

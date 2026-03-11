@@ -44,7 +44,7 @@ import pandas as pd
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_INPUT_PATH = REPO_ROOT / "data" / "processed" / "crsp_monthly_features.csv"
+DEFAULT_INPUT_PATH = REPO_ROOT / "data" / "processed" / "crsp_monthly_features.parquet"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "data" / "processed"
 
 DEFAULT_VAL_START  = "2016-01-01"
