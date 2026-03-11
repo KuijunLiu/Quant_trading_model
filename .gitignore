@@ -5,7 +5,7 @@ echo ".ipynb_checkpoints/" >> .gitignore.DS_Store
 
 # 忽略所有数据文件夹
 data/
-outputs/
+# outputs/
 
 # 忽略所有常见的数据文件格式
 *.csv
