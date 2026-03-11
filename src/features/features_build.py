@@ -7,67 +7,22 @@ import numpy as np
 import pandas as pd
 
 
-"""
-features_build.py
-=================
-Builds lagged price and return features from the processed CRSP monthly stock data.
-
-Input
------
-data/processed/crsp_monthly_processed.csv  (or .parquet)
-    Clean CRSP monthly panel with at minimum the columns:
-    date, permno, ret, prc, shrout.
-    Optional enriching columns: mkt_cap, cfacpr, vol, comnam.
-
-Output
-------
-data/processed/crsp_monthly_features.csv  (or .parquet)
-    Same panel with the following feature columns appended:
-
-    | Column             | Description                                              |
-    |--------------------|----------------------------------------------------------|
-    | adj_prc            | Split-adjusted closing price (prc / cfacpr)              |
-    | turnover           | Monthly share turnover (vol / shrout)                    |
-    | log_mkt_cap        | Natural log of market capitalisation                     |
-    | ret_lag_{1,2,3}    | Return lagged 1, 2, 3 months                             |
-    | mom_2_6            | Cumulative return over months t-6 to t-2 (skip-1 mom.)  |
-    | mom_2_12           | Cumulative return over months t-12 to t-2                |
-    | vol_{3,6,12}m      | Rolling return std-dev over 3, 6, 12 months              |
-    | price_ma_6_ratio   | Lagged price / 6-month MA − 1                            |
-    | price_ma_12_ratio  | Lagged price / 12-month MA − 1                           |
-    | turnover_{3,12}m   | Rolling mean turnover over 3, 12 months                  |
-    | ret_fwd_1m         | Forward 1-month return (prediction target / label)       |
-    | {feature}_cs       | Cross-sectionally standardized version of each feature   |
-
-Design notes
-------------
-* All rolling and lag operations are computed **within each permno group** so
-  that month boundaries never cross between different stocks.
-* Every feature is shifted by at least 1 period relative to the current row to
-  prevent look-ahead bias (no future information leaks into the feature set).
-* The script can be run directly from the command line:
-      python -m src.features.features_build --input <path> --output <path>
-  or imported as a library via `build_features(df)`.
-"""
-
-
-# `Path(__file__)` refers to the path of this Python file itself.
-# `resolve()` converts it to an absolute path.
-# `parents[2]` moves up two directory levels:
+# `Path(__file__)` 表示“当前这个 Python 文件的路径”。
+# `resolve()` 会把它变成绝对路径。
+# `parents[2]` 表示往上退两层目录：
 # src/features/features_build.py -> src/features -> src -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# The `/` operator on `Path` objects joins path segments and handles
-# OS-specific separators automatically, which is cleaner than string concatenation.
+# `Path` 对象可以用 `/` 来拼接路径，读起来比字符串拼接更直观，也能自动处理不同系统的路径分隔符。
 DEFAULT_INPUT_PATH = REPO_ROOT / "data" / "processed" / "crsp_monthly_processed.csv"
-DEFAULT_OUTPUT_PATH = REPO_ROOT / "data" / "processed" / "crsp_monthly_features.csv"
+DEFAULT_OUTPUT_PATH = REPO_ROOT / "data" / "processed" / "crsp_monthly_features.parquet"
 REQUIRED_COLUMNS = {"date", "permno", "ret", "prc", "shrout"}
 
 
 def _resolve_path(path_str: str | None, default_path: Path) -> Path:
-    # Convert the string to a `Path` if the user provided one; otherwise fall back to the default.
-    # `expanduser()` expands a leading `~` to the user's home directory.
+    # 如果用户传了字符串路径，就把它转成 `Path`；否则使用默认路径。
+    # `expanduser()` 会把 `~` 展开成用户家目录。
     path = Path(path_str).expanduser() if path_str else default_path
-    # If the path is relative (e.g. `data/processed/a.csv`), interpret it relative to the repo root.
+    # 如果是相对路径（例如 `data/processed/a.csv`），就默认按仓库根目录来解释。
     if not path.is_absolute():
         path = REPO_ROOT / path
     return path
@@ -83,8 +38,7 @@ def _load_table(input_path: Path) -> pd.DataFrame:
 
 
 def _save_table(df: pd.DataFrame, output_path: Path) -> None:
-    # `parent` is the directory containing the output file;
-    # `mkdir(..., exist_ok=True)` creates it if it does not already exist.
+    # `parent` 是输出文件所在的文件夹；`mkdir(..., exist_ok=True)` 表示“没有就创建，有就跳过”。
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.suffix.lower() == ".parquet":
         df.to_parquet(output_path, index=False)
@@ -93,9 +47,8 @@ def _save_table(df: pd.DataFrame, output_path: Path) -> None:
 
 
 def _group_shift(series: pd.Series, groups: pd.Series, periods: int) -> pd.Series:
-    # Shift within each stock group (permno).
-    # With periods=1, each row receives the value from the *previous* month
-    # for that stock, not simply the previous row in the full table.
+    # 按股票（permno）分组后再做 shift。
+    # 例如 periods=1 时，每只股票当前行拿到的是“上个月”的值，而不是整张表上一行的值。
     return series.groupby(groups, sort=False).shift(periods)
 
 
@@ -107,8 +60,8 @@ def _group_rolling(
     metric: str,
     min_periods: int | None = None,
 ) -> pd.Series:
-    # Lag the series before rolling to ensure the current month's data does not
-    # leak into the current month's feature — the key guard against look-ahead bias.
+    # 先把序列整体滞后，再做 rolling，避免把“当前月”数据泄漏到当前月特征里。
+    # 这是时间序列里避免 look-ahead bias（未来函数）的关键。
     lagged = _group_shift(series, groups, shift_periods)
     rolling = lagged.groupby(groups, sort=False).rolling(
         window=window,
@@ -136,9 +89,9 @@ def _momentum_feature(
     if end_lag < start_lag:
         raise ValueError("end_lag must be greater than or equal to start_lag")
 
-    # Monthly returns must be greater than -100 %; otherwise log1p is undefined.
+    # 月收益率不能小于 -100%，否则 log1p 无法计算。
     safe_returns = returns.where(returns > -1)
-    # Summing log returns is numerically more stable than chaining (1+r) multiplications.
+    # 先转成对数收益率再求和，比直接连乘 `(1+r)` 更稳定。
     log_returns = np.log1p(safe_returns)
     window = end_lag - start_lag + 1
     rolling_log_sum = _group_rolling(
@@ -152,7 +105,6 @@ def _momentum_feature(
 
 
 # Feature columns that will be winsorized and cross-sectionally standardized.
-# The label (ret_fwd_1m) and non-numeric identifier columns are intentionally excluded.
 FEATURE_COLUMNS = [
     "ret_lag_1", "ret_lag_2", "ret_lag_3",
     "mom_2_6", "mom_2_12",
@@ -169,45 +121,28 @@ def _winsorize_cross_section(
     lower: float = 0.01,
     upper: float = 0.99,
 ) -> pd.DataFrame:
-    """Winsorize each feature within each cross-section (date).
-
-    Values below the `lower` quantile or above the `upper` quantile for a
-    given month are clipped to those boundary values, preventing extreme
-    outliers from distorting downstream models.
-    """
-    def _clip(group: pd.DataFrame) -> pd.DataFrame:
-        for col in columns:
-            if col not in group.columns:
-                continue
-            lo = group[col].quantile(lower)
-            hi = group[col].quantile(upper)
-            group[col] = group[col].clip(lo, hi)
-        return group
-
-    return df.groupby("date", group_keys=False).apply(_clip)
+    """Clip each feature to [1%, 99%] within each cross-section (date)."""
+    for col in columns:
+        if col not in df.columns:
+            continue
+        lo = df.groupby("date")[col].transform(lambda x: x.quantile(lower))
+        hi = df.groupby("date")[col].transform(lambda x: x.quantile(upper))
+        df[col] = df[col].clip(lo, hi)
+    return df
 
 
 def _standardize_cross_section(
     df: pd.DataFrame,
     columns: list[str],
 ) -> pd.DataFrame:
-    """Z-score each feature within each cross-section (date).
-
-    After winsorization, subtract the cross-sectional mean and divide by the
-    cross-sectional standard deviation so that all features share a comparable
-    scale across months.  Resulting columns are suffixed with `_cs`.
-    """
-    def _zscore(group: pd.DataFrame) -> pd.DataFrame:
-        for col in columns:
-            if col not in group.columns:
-                continue
-            mu = group[col].mean()
-            sigma = group[col].std()
-            # Avoid division by zero when all values in a cross-section are identical.
-            group[f"{col}_cs"] = (group[col] - mu) / sigma if sigma > 0 else 0.0
-        return group
-
-    return df.groupby("date", group_keys=False).apply(_zscore)
+    """Z-score each feature within each cross-section (date). Suffix: _cs."""
+    for col in columns:
+        if col not in df.columns:
+            continue
+        mu = df.groupby("date")[col].transform("mean")
+        sigma = df.groupby("date")[col].transform("std")
+        df[f"{col}_cs"] = ((df[col] - mu) / sigma).fillna(0.0)
+    return df
 
 
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -216,48 +151,57 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         missing = ", ".join(sorted(missing_columns))
         raise ValueError(f"Missing required columns: {missing}")
 
-    # Work on a copy to avoid mutating the caller's DataFrame.
+    # 复制一份，避免直接改到传进来的原始 DataFrame。
     features = df.copy()
+
+    # 先统一数据类型。CRSP 导出的 CSV 常见字符串、缺失值、异常值混在一起，
+    # 所以这里用 `errors="coerce"` 把无法解析的值转成 NaN，后面统一清洗。
+    features["date"] = pd.to_datetime(features["date"], errors="coerce")
+    features["permno"] = pd.to_numeric(features["permno"], errors="coerce")
+    features["ret"] = pd.to_numeric(features["ret"], errors="coerce")
+    # CRSP 的 `prc` 可能为负，负号通常只是报价约定，不代表真正的负价格。
+    features["prc"] = pd.to_numeric(features["prc"], errors="coerce").abs()
+    features["shrout"] = pd.to_numeric(features["shrout"], errors="coerce")
 
     if "mkt_cap" in features.columns:
         features["mkt_cap"] = pd.to_numeric(features["mkt_cap"], errors="coerce")
     else:
-        # Compute market cap on the fly if the pre-processing stage did not retain it.
+        # 如果预处理阶段没有保留市值，这里即时补算。
         features["mkt_cap"] = features["prc"] * features["shrout"]
 
     features = features.dropna(subset=["date", "permno", "prc", "shrout", "ret"])
+    features = features[(features["prc"] > 0) & (features["shrout"] > 0)]
+    # 时间序列特征必须先排序，否则 lag/rolling 会错位。
+    features = features.sort_values(["permno", "date"]).reset_index(drop=True)
 
-    # Cache the grouping key — reused by every lag/rolling call below.
+    # 后面很多特征都要“按股票分组”计算，所以把分组键单独拿出来复用。
     groups = features["permno"]
 
     if "cfacpr" in features.columns:
         cfacpr = pd.to_numeric(features["cfacpr"], errors="coerce").replace(0, np.nan)
-        # Divide by CRSP's cumulative price adjustment factor to obtain split-adjusted prices,
-        # reducing distortions caused by stock splits and stock dividends.
+        # 用 CRSP 的价格调整因子得到复权价格，减少拆股/送股对价格特征的干扰。
         features["adj_prc"] = features["prc"] / cfacpr
     else:
         features["adj_prc"] = features["prc"]
 
     if "vol" in features.columns:
         volume = pd.to_numeric(features["vol"], errors="coerce")
-        # Turnover approximates "shares traded this month / shares outstanding" —
-        # a simple proxy for liquidity.
+        # turnover 近似表示“本月成交股数 / 流通股数”，是一个粗略流动性指标。
         features["turnover"] = volume / features["shrout"]
     else:
         features["turnover"] = np.nan
 
-    # Log-transforming market cap makes its distribution more symmetric,
-    # which is better suited for cross-sectional modelling.
+    # 取对数后，市值分布更平滑，更适合做横截面建模。
     features["log_mkt_cap"] = np.log(features["mkt_cap"].where(features["mkt_cap"] > 0))
     features["ret_lag_1"] = _group_shift(features["ret"], groups, 1)
     features["ret_lag_2"] = _group_shift(features["ret"], groups, 2)
     features["ret_lag_3"] = _group_shift(features["ret"], groups, 3)
 
-    # Skip the most recent month when computing momentum to avoid short-term reversal noise.
+    # 跳过最近 1 个月，从更早的窗口计算 momentum，常见于避免短期反转噪声。
     features["mom_2_6"] = _momentum_feature(features["ret"], groups, start_lag=2, end_lag=6)
     features["mom_2_12"] = _momentum_feature(features["ret"], groups, start_lag=2, end_lag=12)
 
-    # Volatility is measured as the rolling standard deviation of past returns.
+    # 波动率使用过去收益率的滚动标准差。
     features["vol_3m"] = _group_rolling(features["ret"], groups, shift_periods=1, window=3, metric="std")
     features["vol_6m"] = _group_rolling(features["ret"], groups, shift_periods=1, window=6, metric="std")
     features["vol_12m"] = _group_rolling(features["ret"], groups, shift_periods=1, window=12, metric="std")
@@ -265,8 +209,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     ma_6 = _group_rolling(features["adj_prc"], groups, shift_periods=1, window=6, metric="mean")
     ma_12 = _group_rolling(features["adj_prc"], groups, shift_periods=1, window=12, metric="mean")
     lagged_price = _group_shift(features["adj_prc"], groups, 1)
-    # Position of the last available price relative to its moving average —
-    # a simple proxy for trend strength.
+    # 当前可用价格（上月末）相对过去均线的位置，可理解为简单趋势强弱。
     features["price_ma_6_ratio"] = lagged_price / ma_6 - 1
     features["price_ma_12_ratio"] = lagged_price / ma_12 - 1
 
@@ -285,7 +228,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         metric="mean",
     )
 
-    # Forward 1-month return used as the supervised learning label / prediction target.
+    # 向前看 1 个月收益率，通常作为监督学习里的预测目标（label）。
     features["ret_fwd_1m"] = _group_shift(features["ret"], groups, -1)
 
     # ------------------------------------------------------------------ #
@@ -299,7 +242,10 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # ------------------------------------------------------------------ #
     features = _standardize_cross_section(features, valid_feature_cols)
 
-    # Place the most important columns first for easier inspection in notebooks.
+    # Drop raw feature columns — only the _cs standardized versions are retained.
+    features = features.drop(columns=valid_feature_cols)
+
+    # 把核心特征列排到前面，便于 notebook 里浏览和后续建模。
     ordered_columns = [
         "date",
         "permno",
@@ -310,20 +256,20 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         "adj_prc",
         "shrout",
         "mkt_cap",
-        "log_mkt_cap",
-        "ret_lag_1",
-        "ret_lag_2",
-        "ret_lag_3",
-        "mom_2_6",
-        "mom_2_12",
-        "vol_3m",
-        "vol_6m",
-        "vol_12m",
-        "price_ma_6_ratio",
-        "price_ma_12_ratio",
-        "turnover",
-        "turnover_3m",
-        "turnover_12m",
+        "ret_lag_1_cs",
+        "ret_lag_2_cs",
+        "ret_lag_3_cs",
+        "mom_2_6_cs",
+        "mom_2_12_cs",
+        "vol_3m_cs",
+        "vol_6m_cs",
+        "vol_12m_cs",
+        "price_ma_6_ratio_cs",
+        "price_ma_12_ratio_cs",
+        "log_mkt_cap_cs",
+        "turnover_cs",
+        "turnover_3m_cs",
+        "turnover_12m_cs",
     ]
     remaining_columns = [column for column in features.columns if column not in ordered_columns]
     ordered_columns = [column for column in ordered_columns if column in features.columns] + remaining_columns
@@ -347,16 +293,21 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # When no CLI arguments are supplied, fall back to the default processed paths.
     input_path = _resolve_path(args.input, DEFAULT_INPUT_PATH)
     output_path = _resolve_path(args.output, DEFAULT_OUTPUT_PATH)
 
+    print(f"Reading input from: {input_path}")
     raw_df = _load_table(input_path)
+    print(f"Loaded {len(raw_df):,} rows")
+
+    print("Building features (this may take a few minutes) ...")
     feature_df = build_features(raw_df)
+
+    print(f"Saving output to: {output_path}")
     _save_table(feature_df, output_path)
 
-    print(f"Loaded {len(raw_df):,} rows from {input_path}")
-    print(f"Saved {len(feature_df):,} rows with features to {output_path}")
+    print(f"Done! Saved {len(feature_df):,} rows with {len(feature_df.columns)} columns")
+    print(f"Columns: {list(feature_df.columns)}")
 
 
 if __name__ == "__main__":
