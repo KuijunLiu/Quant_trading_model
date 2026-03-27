@@ -11,8 +11,8 @@ Pipeline
 2. Tune the Ridge alpha hyperparameter via walk-forward cross-validation
    on the training set.
 3. Re-train the final model on the full training set with the best alpha.
-4. Evaluate on the validation set and the held-out test set.
-5. Save predictions and a summary to data/model_outputs/ridge/.
+4. Evaluate on the held-out test set.
+5. Save predictions, rankings, and a summary to outputs/model_outputs/ridge/.
 
 Usage
 -----
@@ -76,6 +76,13 @@ def _save(df: pd.DataFrame, path: Path) -> None:
     print(f"  Saved {len(df):,} rows  →  {path}")
 
 
+def _resolve_path(path: Path, default_path: Path) -> Path:
+    resolved = path.expanduser() if str(path) else default_path
+    if not resolved.is_absolute():
+        resolved = REPO_ROOT / resolved
+    return resolved
+
+
 # ------------------------------------------------------------------ #
 # Feature / label extraction                                           #
 # ------------------------------------------------------------------ #
@@ -85,8 +92,15 @@ def _get_xy(
     feature_cols: list[str],
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Drop rows where any feature or the label is NaN, then return X, y, and the clean df."""
+    missing_cols = [col for col in feature_cols + [LABEL_COL] if col not in df.columns]
+    if missing_cols:
+        missing = ", ".join(missing_cols)
+        raise KeyError(f"Missing required modeling columns: {missing}")
+
     cols = feature_cols + [LABEL_COL]
     clean = df.dropna(subset=cols).reset_index(drop=True)
+    if clean.empty:
+        raise ValueError("No rows remain after dropping NaNs from features/label.")
     X = clean[feature_cols].to_numpy(dtype=np.float64)
     y = clean[LABEL_COL].to_numpy(dtype=np.float64)
     return X, y, clean
@@ -138,6 +152,11 @@ def _walk_forward_cv_alpha(
             alpha_rmse[alpha].append(rmse)
 
     mean_rmse = {a: np.mean(v) for a, v in alpha_rmse.items() if v}
+    if not mean_rmse:
+        raise ValueError(
+            "Walk-forward CV did not produce any valid folds. "
+            "Please check the train split date range and feature availability."
+        )
     best_alpha = min(mean_rmse, key=mean_rmse.__getitem__)
 
     print("\nCV results (mean RMSE per alpha):")
@@ -158,24 +177,40 @@ def _evaluate(
     feature_cols: list[str],
     split_name: str,
 ) -> tuple[pd.DataFrame, dict]:
-    """Run predictions on a split, print metrics, and return (predictions_df, metrics_dict)."""
+    """Run predictions on a split, print metrics, and return (predictions_df, metrics_dict).
+
+    Metrics include:
+      - RMSE
+      - R²
+      - Pearson IC  (linear correlation)
+      - Rank   IC   (Spearman / rank correlation)
+    """
     X, y, clean_df = _get_xy(df, feature_cols)
     preds = model.predict(X)
 
     rmse = np.sqrt(mean_squared_error(y, preds))
     r2   = r2_score(y, preds)
-    ic   = pd.Series(preds).corr(pd.Series(y))   # Information Coefficient (Pearson)
+    ic_pearson = pd.Series(preds).corr(pd.Series(y))                     # linear IC
+    ic_rank    = pd.Series(preds).corr(pd.Series(y), method="spearman")  # rank  IC
 
     print(f"\n{split_name} metrics:")
     print(f"  RMSE : {rmse:.6f}")
     print(f"  R²   : {r2:.6f}")
-    print(f"  IC   : {ic:.6f}")
+    print(f"  IC (Pearson) : {ic_pearson:.6f}")
+    print(f"  IC (Rank)    : {ic_rank:.6f}")
 
     out_df = clean_df[["date", "permno"] + (["comnam"] if "comnam" in clean_df.columns else [])].copy()
     out_df["y_true"] = y
     out_df["y_pred"] = preds
 
-    metrics = {"split": split_name, "rmse": rmse, "r2": r2, "ic": ic, "n_rows": len(y)}
+    metrics = {
+        "split": split_name,
+        "rmse": rmse,
+        "r2": r2,
+        "ic_pearson": ic_pearson,
+        "ic_rank": ic_rank,
+        "n_rows": len(y),
+    }
     return out_df, metrics
 
 
